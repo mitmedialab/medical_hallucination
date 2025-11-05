@@ -24,6 +24,7 @@ Foundation Models that are capable of processing and generating multi-modal data
 If you want to add your work or model to this list, please do not hesitate to email ybkim95@mit.edu.
 
 ## Contents
+- [Setup](#setup)
 - [What makes Medical Hallucination Special?](#difference)
 - [Hallucinations in Medical LLMs](#llms)
 - [Survey on Medical Hallucination among Healthcare Professionals](#survey)
@@ -32,6 +33,315 @@ If you want to add your work or model to this list, please do not hesitate to em
 - [Detection Methods for Medical Hallucination](#detection)
 - [Mitigation Methods for Medical Hallucination](#mitigation)
 - [Human Physicians' Medical Hallucination Annotation](#annotation)
+
+## Setup
+
+### Step 1: Clone the Repository
+
+```bash
+git clone https://github.com/mitmedialba/medical_hallucination.git
+cd medical_hallucination
+```
+
+### Step 2: Install Dependencies
+
+```bash
+# Create a virtual environment (recommended)
+conda create -n medrag python=3.10
+conda activate medrag
+
+# Install required packages
+pip install -r requirements.txt
+```
+
+### Step 3: Clone MedRAG Repository
+
+The experiments use the [MedRAG framework](https://github.com/Teddy-XiongGZ/MedRAG) for retrieval-augmented generation.
+
+```bash
+# Clone MedRAG into the project directory
+git clone https://github.com/Teddy-XiongGZ/MedRAG.git
+cd MedRAG
+```
+
+### Step 4: Download MedRAG Corpus (Optional, for RAG method)
+
+If you want to use the MedRAG mitigation method, you need to download the medical corpus:
+
+```bash
+# Inside the MedRAG directory
+python -m src.download_corpus --corpus_name Textbooks --save_dir ./corpus
+```
+
+This will download the medical textbook corpus (~5GB) used for retrieval.
+
+**Note**: If you skip this step, the MedRAG method will be skipped during experiments.
+
+### Step 5: Configure API Keys
+
+```bash
+# Go back to the project root
+cd ..
+
+# Copy the example environment file
+cp .env.example .env
+
+# Edit .env and add your API keys
+nano .env  # or use your preferred text editor
+```
+
+Add your API keys to the `.env` file:
+
+```bash
+OPENAI_API_KEY=sk-...
+GOOGLE_API_KEY=AIza...
+OPENROUTER_API_KEY=sk-or-v1-...
+TAVILY_API_KEY=tvly-...
+```
+
+**Where to get API keys:**
+- **OpenAI**: https://platform.openai.com/api-keys (for GPT models)
+- **Google**: https://aistudio.google.com/app/apikey (for Gemini models)
+- **OpenRouter**: https://openrouter.ai/keys (for DeepSeek and other models)
+- **Tavily**: https://tavily.com (for internet search)
+
+**Note**: You only need API keys for the models you plan to test.
+
+### Step 6: Prepare Dataset
+
+Ensure the dataset is in the correct location:
+
+```
+medical_hallucination/
+├── dataset/
+│   ├── medhalt_reasoning_fake.csv
+│   ├── medhalt_reasoning_FCT.csv
+│   ├── medhalt_reasoning_nota.csv
+│   └── original/
+│       ├── reasoning_fake.csv
+│       ├── reasoning_FCT.csv
+│       └── reasoning_nota.csv
+```
+
+The `dataset/` directory contains prompts for models, and `dataset/original/` contains ground truth labels.
+
+---
+
+## Running Experiments
+
+### Basic Usage
+
+Run experiments with a single model:
+
+```bash
+python run_experiments.py --models gpt-4o --seed 0
+```
+
+### Run Multiple Models
+
+```bash
+python run_experiments.py \
+  --models gpt-4o gemini-2.0-flash \
+  --seed 0 \
+  --output_dir ./results
+```
+
+### Models
+
+**OpenAI Models:**
+- `gpt-4o`
+- `gpt-4o-mini`
+- `gpt-5`
+- `o1`
+- `o3-mini`
+
+**Google Models:**
+- `gemini-2.5-pro`
+
+**Medical-Specialized Models (HuggingFace):**
+- `medgemma-4b-it`
+- `AlpaCare-llama2-13b`
+- `medalpaca-13b`
+- `PMC_LLaMA_13B`
+
+**Other Models:**
+- `deepseek-r1` (via OpenRouter)
+
+### Advanced Options
+
+```bash
+python run_experiments.py \
+  --models gpt-4o \
+  --dataset_path ./dataset \
+  --output_dir ./my_results \
+  --seed 42
+```
+
+**Arguments:**
+- `--models`: List of model names (required)
+- `--dataset_path`: Path to dataset directory (default: `./dataset`)
+- `--output_dir`: Output directory for results (default: `./results`)
+- `--seed`: Random seed for reproducibility (default: `0`)
+
+### Understanding the Experiment Process
+
+For each model and dataset combination, the script will:
+
+1. **Load the model** (if HuggingFace-based) or initialize API client
+2. **Process each question** through 5 mitigation methods:
+   - **Base**: No additional mitigation
+   - **Prompting**: System prompt requesting truthful responses
+   - **CoT (Chain-of-Thought)**: "Let's think step-by-step" instruction
+   - **MedRAG**: Retrieval-augmented generation with medical corpus
+   - **Internet Search**: Web search augmentation via Tavily API
+3. **Save intermediate results** every 10 samples (for recovery)
+4. **Save final results** in JSON format
+
+### Output Format
+
+Results are saved as JSON files:
+
+```
+results/
+├── gpt-4o_medhalt_reasoning_FCT_seed0.json
+├── gpt-4o_medhalt_reasoning_fake_seed0.json
+├── gpt-4o_medhalt_reasoning_nota_seed0.json
+├── gemini-2.0-flash_medhalt_reasoning_FCT_seed0.json
+└── ...
+```
+
+Each JSON file contains:
+
+```json
+{
+  "seed": 0,
+  "results": [
+    {
+      "question": "What is...",
+      "options": {"A": "...", "B": "...", "C": "...", "D": "..."},
+      "base_output": "Model response...",
+      "prompting_output": "Model response...",
+      "cot_output": "Model response...",
+      "medrag_output": "A",
+      "internetsearch_output": "Model response..."
+    },
+    ...
+  ]
+}
+```
+
+---
+
+## Evaluating Results
+
+### Basic Evaluation
+
+After running experiments, evaluate the results:
+
+```bash
+python evaluate_results.py \
+  --results_dir ./results \
+  --models gpt-4o gemini-2.0-flash \
+  --tasks FCT fake nota
+```
+
+### Evaluation Metrics
+
+The evaluation script calculates:
+
+1. **Accuracy**: Percentage of correct predictions
+2. **Pointwise Score**: +1 for correct, -0.25 for incorrect
+3. **Similarity Scores** (using UMLS-BERT embeddings):
+   - **Answer Similarity**: Cosine similarity between model output and correct answer
+   - **Question Similarity**: Cosine similarity between model output and question
+   - **Combined Score**: Average of answer and question similarity
+
+### Understanding Evaluation Output
+
+The script will print:
+
+```
+[EVALUATION RESULTS - Averaged Performance Across Tasks]
+================================================================================
+
+Model: MODEL_NAME
+--------------------------------------------------------------------------------
+
+  Method: BASE
+    Accuracy: 75.50% (151/200)
+    Pointwise Score: 0.69
+    Similarity Scores:
+      Overall answer_similarity: 0.823 (±0.145)
+      Overall question_similarity: 0.756 (±0.132)
+      Overall combined_score: 0.789 (±0.125)
+
+    Per-Task Similarity Scores:
+      FCT:
+        answer_similarity: 0.841 (±0.121)
+        question_similarity: 0.769 (±0.118)
+        combined_score: 0.805 (±0.109)
+      fake:
+        answer_similarity: 0.798 (±0.167)
+        question_similarity: 0.741 (±0.145)
+        combined_score: 0.769 (±0.142)
+      nota:
+        answer_similarity: 0.831 (±0.141)
+        question_similarity: 0.758 (±0.133)
+        combined_score: 0.794 (±0.124)
+
+  Method: MEDRAG
+    Accuracy: 82.00% (164/200)
+    Pointwise Score: 0.77
+    ...
+```
+
+### Custom Evaluation
+
+You can also evaluate specific models or tasks:
+
+```bash
+# Evaluate only one model
+python evaluate_results.py \
+  --results_dir ./results \
+  --models gpt-4o \
+  --tasks FCT fake nota
+
+# Evaluate only specific tasks
+python evaluate_results.py \
+  --results_dir ./results \
+  --models gpt-4o gemini-2.0-flash \
+  --tasks FCT
+```
+
+---
+
+## Understanding the Output
+
+### Task Types
+
+Our experiments use three types of medical reasoning tasks:
+
+1. **FCT (Factual Consistency Testing)**
+   - Tests model's ability to provide factually correct medical information
+   - Questions with definitive correct answers
+
+2. **fake (Hallucination Detection)**
+   - Tests model's ability to recognize when it lacks knowledge
+   - Correct answer is always "I do not know"
+
+3. **nota (None of the Above)**
+   - Tests model's ability to recognize when none of the options are correct
+   - Requires critical evaluation of all options
+
+### Mitigation Methods
+
+1. **Base**: Standard inference without additional prompting
+2. **Prompting**: System prompt: "You are a truthful medical assistant..."
+3. **CoT**: Chain-of-thought prompting with "Let's think step-by-step"
+4. **MedRAG**: Retrieval-augmented generation using medical textbooks
+5. **Internet Search**: Web search augmentation using Tavily API
+
+---
 
 ## What makes Medical Hallucination Special? <a name="difference"></a>
 
