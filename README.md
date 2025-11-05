@@ -245,7 +245,7 @@ python evaluate_results.py \
   --tasks FCT fake nota
 ```
 
-### Evaluation Metrics
+### Metrics
 
 The evaluation script calculates:
 
@@ -315,7 +315,7 @@ python evaluate_results.py \
 
 ---
 
-## Understanding the Output
+## Outputs
 
 ### Task Types
 
@@ -336,7 +336,7 @@ Our experiments use three types of medical reasoning tasks:
 ### Mitigation Methods
 
 1. **Base**: Standard inference without additional prompting
-2. **Prompting**: System prompt: "You are a truthful medical assistant..."
+2. **System Prompting**: System prompt: "You are a truthful medical assistant..."
 3. **CoT**: Chain-of-thought prompting with "Let's think step-by-step"
 4. **MedRAG**: Retrieval-augmented generation using medical textbooks
 5. **Internet Search**: Web search augmentation using Tavily API
